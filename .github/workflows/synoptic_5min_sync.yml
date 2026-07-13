@@ -1,0 +1,42 @@
+name: Synoptic 5min Feed Sync
+
+on:
+  # Nur workflow_dispatch – externer Trigger via cron-job.org (1x pro Minute).
+  # GitHub-Actions-Cron kann minütliche Läufe nicht zuverlässig garantieren.
+  workflow_dispatch:
+
+concurrency:
+  group: synoptic-5min-sync
+  # Läufe überlappen sich nicht; ein neuer wartet statt abzubrechen.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Poll Synoptic feed and store new rows
+        env:
+          SYNOPTIC_TOKEN: ${{ secrets.SYNOPTIC_TOKEN }}
+          SYNOPTIC_STATION: KLGA,KLGA1M
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          pip install pymysql
+          python3 poll_synoptic_5min.py
+
+      - name: Report DB fill
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: python3 report_synoptic_db.py

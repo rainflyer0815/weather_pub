@@ -1,0 +1,40 @@
+name: Synoptic Push Stream
+
+on:
+  # Alle 30 Minuten wird ein Lauf eingereiht. Dank concurrency läuft immer nur
+  # einer (bis zu ~340 Min); der nächste wartet in der Queue und übernimmt
+  # nahtlos, sobald der laufende endet. Die Session-ID in der DB sorgt dafür,
+  # dass beim Übergang keine Beobachtung verloren geht (Resume bis 3 Tage).
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: synoptic-push-stream
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    # GitHub-Job-Limit ist 360 Min; der Streamer beendet sich nach 340 Min selbst.
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stream Synoptic push feed into DB
+        env:
+          SYNOPTIC_TOKEN: ${{ secrets.SYNOPTIC_TOKEN }}
+          SYNOPTIC_STATION: KLGA,KLGA1M
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          pip install pymysql websocket-client
+          python3 stream_synoptic_push.py --max-runtime 340

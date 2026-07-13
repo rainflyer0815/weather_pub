@@ -1,0 +1,42 @@
+name: Polymarket Stake Alert
+
+on:
+  # Nur workflow_dispatch – externer Trigger via cron-job.org.
+  # Kein schedule: verhindert doppelte Nachrichten neben cron-job.org.
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-stake-alert
+  # Warteschlange statt Abbruch: ein abgebrochener Lauf kann die Nachricht
+  # bereits gesendet haben, der nächste sendet dann erneut → Doppel-Nachricht.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore 10-min send dedup state
+        uses: actions/cache@v4
+        with:
+          path: .telegram_last_sent
+          key: telegram-last-sent-v1
+          restore-keys: |
+            telegram-last-sent-v1
+
+      - name: Send Telegram stake alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 telegram_stake_alert.py
+
+      - name: Save 10-min send dedup state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .telegram_last_sent
+          key: telegram-last-sent-v1

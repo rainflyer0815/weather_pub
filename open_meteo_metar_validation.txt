@@ -1,0 +1,73 @@
+Validierung Open-Meteo vs. METAR – München-Flughafen (EDDM)
+Zeitraum: 01.01.2024 – 09.07.2026
+METAR: IEM ASOS-Archiv  |  Prognose: Open-Meteo Historical Forecast API
+Auflösung: int(T + 0.5)  |  Stundenfenster: 10–18
+Vergleichstage: 920
+
+Methodik:
+  - METAR-Istwert je Stunde = Maximum der METAR-Meldungen in dieser Stunde
+  - Open-Meteo = archivierte Modellprognose (Historical Forecast, ab ~2021)
+  - Peak-Zeit METAR = Zeitpunkt des Tagesmaximums
+  - Peak-Zeit Prognose = Stunde mit höchster Prognose 10–18 Uhr
+
+Alle Tage  (n=920)
+  Tmax Bias (Prog−METAR):   -0.40 °C (aufgelöst)
+  Tmax MAE:                 0.64 °C
+  Tmax Median-Fehler:       0.50 °C
+  Treffer exakt (resolved): 51.1%
+  Treffer ±1 °C:            94.0%
+  Peak-Zeit Δ:              median 100 min  Ø 150 min
+  Prog zu niedrig / gleich / zu hoch: 381 / 470 / 69
+
+Sommer (Jun–Aug)  (n=222)
+  Tmax Bias (Prog−METAR):   -0.34 °C (aufgelöst)
+  Tmax MAE:                 0.63 °C
+  Tmax Median-Fehler:       0.60 °C
+  Treffer exakt (resolved): 46.8%
+  Treffer ±1 °C:            94.6%
+  Peak-Zeit Δ:              median 50 min  Ø 94 min
+  Prog zu niedrig / gleich / zu hoch: 92 / 104 / 26
+
+Heiße Tage (METAR ≥ 25 °C aufgelöst)  (n=160)
+  Tmax Bias (Prog−METAR):   -0.12 °C (aufgelöst)
+  Tmax MAE:                 0.54 °C
+  Tmax Median-Fehler:       0.50 °C
+  Treffer exakt (resolved): 53.8%
+  Treffer ±1 °C:            98.1%
+  Peak-Zeit Δ:              median 50 min  Ø 63 min
+  Prog zu niedrig / gleich / zu hoch: 45 / 86 / 29
+
+Stündlicher Bias Open-Meteo − METAR (10–18 Uhr):
+Stunde     n     Bias      MAE    Ø Ist   Ø Prog
+--------------------------------------------------
+10:00   222    -1.74     1.80     21.3     19.5
+11:00   222    -1.08     1.17     22.2     21.2
+12:00   222    -0.74     0.90     23.0     22.3
+13:00   222    -0.61     0.85     23.7     23.0
+14:00   222    -0.46     0.69     24.1     23.6
+15:00   222    -0.37     0.68     24.3     24.0
+16:00   222    -0.26     0.72     24.5     24.3
+17:00   222    -0.05     0.66     24.3     24.3
+18:00   222    -0.04     0.67     23.9     23.8
+
+Letzte 14 Tage im Detail:
+  25.06.2026  METAR 34.0→34°C @15:50  Prog 33.9→34°C @15:00  Δresolved +0  PeakΔ -50 min
+  26.06.2026  METAR 34.0→34°C @14:50  Prog 34.9→35°C @16:00  Δresolved +1  PeakΔ +70 min
+  27.06.2026  METAR 36.0→36°C @15:20  Prog 35.9→36°C @16:00  Δresolved +0  PeakΔ +40 min
+  28.06.2026  METAR 35.0→35°C @12:20  Prog 35.0→35°C @17:00  Δresolved +0  PeakΔ +280 min
+  29.06.2026  METAR 30.0→30°C @13:20  Prog 29.9→30°C @17:00  Δresolved +0  PeakΔ +220 min
+  30.06.2026  METAR 28.0→28°C @16:50  Prog 27.8→28°C @17:00  Δresolved +0  PeakΔ +10 min
+  01.07.2026  METAR 22.0→22°C @08:50  Prog 20.9→21°C @10:00  Δresolved -1  PeakΔ +70 min
+  02.07.2026  METAR 27.0→27°C @14:50  Prog 25.9→26°C @18:00  Δresolved -1  PeakΔ +190 min
+  03.07.2026  METAR 25.0→25°C @15:50  Prog 24.5→25°C @17:00  Δresolved +0  PeakΔ +70 min
+  04.07.2026  METAR 27.0→27°C @16:20  Prog 26.1→26°C @17:00  Δresolved -1  PeakΔ +40 min
+  05.07.2026  METAR 26.0→26°C @13:50  Prog 24.6→25°C @15:00  Δresolved -1  PeakΔ +70 min
+  06.07.2026  METAR 25.0→25°C @16:20  Prog 24.3→24°C @18:00  Δresolved -1  PeakΔ +100 min
+  07.07.2026  METAR 30.0→30°C @14:20  Prog 30.2→30°C @16:00  Δresolved +0  PeakΔ +100 min
+  08.07.2026  METAR 23.0→23°C @15:50  Prog 22.9→23°C @17:00  Δresolved +0  PeakΔ +70 min
+
+Interpretation:
+  - Negative Tmax-Bias = Open-Meteo unterschätzt das METAR-Tagesmaximum.
+  - Stunden-Bias zeigt, ab welcher Uhrzeit die Prognose typischerweise hinterherhinkt.
+  - Peak-Zeit-Vergleich ist grob (METAR :20/:50 vs. OM volle Stunde).
+  - Für Polymarket: METAR-Tmax ist Referenz; Prognose oft 0–1 °C zu niedrig.

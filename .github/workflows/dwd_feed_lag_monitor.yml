@@ -1,0 +1,42 @@
+name: DWD Feed Lag Monitor
+
+on:
+  schedule:
+    # GitHub Actions uses UTC. Runs every 10 minutes.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log DWD /now vs METAR lag
+        run: python3 monitor_dwd_feed_lag.py
+
+      - name: Commit lag log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dwd_feed_lag_log.csv
+          if git diff --staged --quiet; then
+            echo "No new lag data to commit."
+          else
+            git commit -m "Log DWD/METAR feed lag snapshot"
+            git push
+          fi
+
+      - name: Sync lag log to MariaDB
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          pip install pymysql
+          python3 upload_lag_to_db.py

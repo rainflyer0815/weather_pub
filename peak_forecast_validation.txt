@@ -1,0 +1,97 @@
+Validierung Peak-Prognose – München-Flughafen (DWD 01262)
+Zeitraum: 2020–2026 | Logik: Main.py analyze_peak_forecast
+Auflösung: int(T + 0.5)  (ab 0,5 aufrunden, Polymarket/Wunderground)
+Tage gesamt: 2376  |  Sommertage (Jun–Aug): 585
+
+Methodik:
+  - Auslösung: chronologisch, nur Messwerte bis zum Signalzeitpunkt
+  - Peak-Zeit ist bei Auslösung UNBEKANNT (kein Filtern nach Peak-Nähe)
+  - Peak-Zeit/Tagesmax nur nachträglich zur Auswertung der Trefferquote
+
+Treffer-Definitionen (Zieltemperatur = aufgelöstes Tagesmaximum):
+  Range   = Ist-°C liegt im Prognose-Intervall [est_lo, est_hi]
+  Mitte   = Prognose-Mitte exakt
+  run_max = aufgelöstes laufendes Maximum zum Signalzeitpunkt exakt
+
+Erstes Nachmittags-Signal ab 12:00 (alle)  (n=2376)
+  Auslösung:         median 12:10  Q1–Q3 12:00–12:30
+  Treffer Range:     62.2%
+  Treffer Mitte:     47.7%
+  Treffer run_max:   43.9%
+  Signal-Typ:        slowing=1030, plateau=890, likely_passed=456
+  Davon VOR Peak:    1797 (75.6%)
+    → Min vor Peak:  median 110  Ø 131  Q1–Q3 60–160
+    → Treffer Range: 50.0%  run_max: 25.8%
+  Davon NACH Peak:   579 (24.4%)
+    → Treffer Range: 100.0%  run_max: 100.0%
+  Abdeckung:         2376/2376 = 100.0%
+
+Erstes Nachmittags-Signal ab 12:00 (Sommer)  (n=585)
+  Auslösung:         median 12:10  Q1–Q3 12:00–12:40
+  Treffer Range:     50.8%
+  Treffer Mitte:     35.0%
+  Treffer run_max:   30.9%
+  Signal-Typ:        slowing=270, plateau=207, likely_passed=108
+  Davon VOR Peak:    482 (82.4%)
+    → Min vor Peak:  median 130  Ø 134  Q1–Q3 80–180
+    → Treffer Range: 40.2%  run_max: 16.2%
+  Davon NACH Peak:   103 (17.6%)
+    → Treffer Range: 100.0%  run_max: 100.0%
+  Abdeckung:         585/585 = 100.0%
+
+Erstes Nachmittags-Signal ab 13:00 (Sommer)  (n=585)
+  Auslösung:         median 13:10  Q1–Q3 13:00–13:40
+  Treffer Range:     75.4%
+  Treffer Mitte:     58.1%
+  Treffer run_max:   55.2%
+  Signal-Typ:        slowing=236, plateau=212, likely_passed=137
+  Davon VOR Peak:    404 (69.1%)
+    → Min vor Peak:  median 90  Ø 94  Q1–Q3 50–120
+    → Treffer Range: 64.4%  run_max: 35.1%
+  Davon NACH Peak:   181 (30.9%)
+    → Treffer Range: 100.0%  run_max: 100.0%
+  Abdeckung:         585/585 = 100.0%
+
+--- Nach Signal-Typ (ab 12:00, Sommer, ohne Peak-Vorwissen) ---
+
+  slowing  (n=575)
+  Auslösung:         median 12:40  Q1–Q3 12:10–13:50
+  Treffer Range:     69.2%
+  Treffer Mitte:     44.7%
+  Treffer run_max:   42.6%
+  Signal-Typ:        slowing=575
+  Davon VOR Peak:    420 (73.0%)
+    → Min vor Peak:  median 120  Ø 119  Q1–Q3 70–160
+    → Treffer Range: 57.9%  run_max: 21.4%
+  Davon NACH Peak:   155 (27.0%)
+    → Treffer Range: 100.0%  run_max: 100.0%
+
+  plateau  (n=579)
+  Auslösung:         median 13:00  Q1–Q3 12:20–14:30
+  Treffer Range:     59.6%
+  Treffer Mitte:     48.9%
+  Treffer run_max:   48.7%
+  Signal-Typ:        plateau=579
+  Davon VOR Peak:    376 (64.9%)
+    → Min vor Peak:  median 120  Ø 120  Q1–Q3 60–170
+    → Treffer Range: 37.8%  run_max: 21.0%
+  Davon NACH Peak:   203 (35.1%)
+    → Treffer Range: 100.0%  run_max: 100.0%
+
+  likely_passed  (n=585)
+  Auslösung:         median 13:50  Q1–Q3 12:30–15:30
+  Treffer Range:     74.5%
+  Treffer Mitte:     70.3%
+  Treffer run_max:   70.3%
+  Signal-Typ:        likely_passed=585
+  Davon VOR Peak:    248 (42.4%)
+    → Min vor Peak:  median 110  Ø 116  Q1–Q3 60–170
+    → Treffer Range: 39.9%  run_max: 29.8%
+  Davon NACH Peak:   337 (57.6%)
+    → Treffer Range: 100.0%  run_max: 100.0%
+
+Interpretation:
+  - slowing/plateau feuern oft 1–2 h VOR dem Peak (Fehlalarm möglich).
+  - Trefferquote VOR Peak ist deutlich niedriger als NACH Peak-Bestätigung.
+  - likely_passed: erst wenn Signal NACH dem Peak kommt, ist run_max verlässlich.
+  - Für Polymarket: Zieltemperatur erst nach Peak-Bestätigung sinnvoll setzen.

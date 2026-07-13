@@ -1,0 +1,15 @@
+<?php
+// Kopiere nach config.db.php und trage Zugangsdaten + API-Key ein.
+return [
+    'host' => 'localhost',
+    'port' => 3306,
+    'database' => 'DEINE_DB',
+    'user' => 'DEINE_DB',
+    'password' => 'HIER_EINTRAGEN',
+    'csv_path' => __DIR__ . '/dwd_feed_lag_log.csv',
+
+    // Query-API (db_query_api.php)
+    'api_key' => 'HIER_LANGES_GEHEIMNIS_EINTRAGEN',
+    'allow_writes' => false,  // true nur für INSERT/UPDATE/DELETE
+    'max_rows' => 500,
+];

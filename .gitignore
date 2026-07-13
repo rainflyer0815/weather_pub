@@ -1,0 +1,8 @@
+.telegram.env
+.telegram_last_sent
+.env.db
+.env.db.api
+config.db.php
+__pycache__/
+*.pyc
+telegram_stake.log

@@ -1,0 +1,59 @@
+Analog-Tage – 08.07.2026 07:20 Ortszeit (KW 28)
+Station 01262 München-Flughafen
+
+Referenz:
+  TT_10:       19.4°C
+  Luftfeuchte: 59%
+  Wind:        4.2 m/s (15 km/h)
+  Regen 10min: 0.00 mm
+  Wolken:      100% (Prognose)
+  Jahreszeit:  KW 26–30
+
+Top 15 analoge Tage (222 Kandidaten):
+  05.07.2026  07:00  TT=19.4°C  RF=49%  Wind=4.7m/s  NM=7.5/8  SDK=–h  Regen=6.5mm  → Tagesmax 25.6°C  Peak 11:50  Score=2.1
+  13.07.2023  07:40  TT=19.3°C  RF=66%  Wind=4.4m/s  NM=6.3/8  SDK=6.3h  Regen=0.0mm  → Tagesmax 24.3°C  Peak 15:10  Score=2.2
+  03.07.2023  07:20  TT=19.6°C  RF=49%  Wind=4.2m/s  NM=6.5/8  SDK=5.8h  Regen=0.2mm  → Tagesmax 25.2°C  Peak 15:10  Score=2.3
+  18.07.2025  07:10  TT=19.6°C  RF=61%  Wind=4.2m/s  NM=4.9/8  SDK=13.5h  Regen=0.0mm  → Tagesmax 25.5°C  Peak 15:10  Score=2.5
+  04.07.2023  07:00  TT=19.3°C  RF=65%  Wind=4.7m/s  NM=6.5/8  SDK=8.4h  Regen=0.3mm  → Tagesmax 26.2°C  Peak 17:10  Score=2.6
+  17.07.2021  07:40  TT=19.4°C  RF=83%  Wind=4.0m/s  NM=7.1/8  SDK=1.0h  Regen=4.4mm  → Tagesmax 23.1°C  Peak 13:50  Score=2.8
+  20.07.2023  07:00  TT=19.7°C  RF=54%  Wind=4.5m/s  NM=6.9/8  SDK=8.6h  Regen=0.0mm  → Tagesmax 25.5°C  Peak 14:00  Score=2.8
+  06.07.2026  07:30  TT=19.4°C  RF=72%  Wind=3.3m/s  NM=7.6/8  SDK=–h  Regen=0.0mm  → Tagesmax 25.7°C  Peak 15:30  Score=3.0
+  29.07.2023  07:10  TT=19.2°C  RF=79%  Wind=4.1m/s  NM=7.1/8  SDK=3.6h  Regen=9.6mm  → Tagesmax 25.5°C  Peak 10:50  Score=3.1
+  03.07.2026  07:20  TT=19.4°C  RF=64%  Wind=3.8m/s  NM=4.0/8  SDK=–h  Regen=0.0mm  → Tagesmax 25.5°C  Peak 15:10  Score=3.2
+  25.07.2020  07:10  TT=19.4°C  RF=69%  Wind=3.8m/s  NM=4.8/8  SDK=7.7h  Regen=0.0mm  → Tagesmax 25.3°C  Peak 16:30  Score=3.2
+  16.07.2024  07:00  TT=19.4°C  RF=93%  Wind=4.3m/s  NM=7.3/8  SDK=2.4h  Regen=0.8mm  → Tagesmax 26.2°C  Peak 15:00  Score=3.4
+  23.07.2024  07:10  TT=19.4°C  RF=79%  Wind=3.5m/s  NM=7.1/8  SDK=7.5h  Regen=2.6mm  → Tagesmax 25.6°C  Peak 16:10  Score=3.4
+  30.07.2022  07:20  TT=19.3°C  RF=76%  Wind=3.9m/s  NM=5.8/8  SDK=8.0h  Regen=12.7mm  → Tagesmax 25.7°C  Peak 15:00  Score=3.4
+  26.07.2022  07:20  TT=19.5°C  RF=86%  Wind=4.2m/s  NM=6.1/8  SDK=3.8h  Regen=0.0mm  → Tagesmax 24.5°C  Peak 14:30  Score=3.5
+
+Bewölkt (NM ≥ 5/8, Top 10):
+  05.07.2026  07:00  TT=19.4°C  RF=49%  Wind=4.7m/s  NM=7.5/8  SDK=–h  Regen=6.5mm  → Tagesmax 25.6°C  Peak 11:50  Score=2.1
+  13.07.2023  07:40  TT=19.3°C  RF=66%  Wind=4.4m/s  NM=6.3/8  SDK=6.3h  Regen=0.0mm  → Tagesmax 24.3°C  Peak 15:10  Score=2.2
+  03.07.2023  07:20  TT=19.6°C  RF=49%  Wind=4.2m/s  NM=6.5/8  SDK=5.8h  Regen=0.2mm  → Tagesmax 25.2°C  Peak 15:10  Score=2.3
+  04.07.2023  07:00  TT=19.3°C  RF=65%  Wind=4.7m/s  NM=6.5/8  SDK=8.4h  Regen=0.3mm  → Tagesmax 26.2°C  Peak 17:10  Score=2.6
+  17.07.2021  07:40  TT=19.4°C  RF=83%  Wind=4.0m/s  NM=7.1/8  SDK=1.0h  Regen=4.4mm  → Tagesmax 23.1°C  Peak 13:50  Score=2.8
+  20.07.2023  07:00  TT=19.7°C  RF=54%  Wind=4.5m/s  NM=6.9/8  SDK=8.6h  Regen=0.0mm  → Tagesmax 25.5°C  Peak 14:00  Score=2.8
+  06.07.2026  07:30  TT=19.4°C  RF=72%  Wind=3.3m/s  NM=7.6/8  SDK=–h  Regen=0.0mm  → Tagesmax 25.7°C  Peak 15:30  Score=3.0
+  29.07.2023  07:10  TT=19.2°C  RF=79%  Wind=4.1m/s  NM=7.1/8  SDK=3.6h  Regen=9.6mm  → Tagesmax 25.5°C  Peak 10:50  Score=3.1
+  16.07.2024  07:00  TT=19.4°C  RF=93%  Wind=4.3m/s  NM=7.3/8  SDK=2.4h  Regen=0.8mm  → Tagesmax 26.2°C  Peak 15:00  Score=3.4
+  23.07.2024  07:10  TT=19.4°C  RF=79%  Wind=3.5m/s  NM=7.1/8  SDK=7.5h  Regen=2.6mm  → Tagesmax 25.6°C  Peak 16:10  Score=3.4
+  Ø 25.3°C  Median 25.6°C  Range 23.1–26.2°C
+  Verteilung: 26°C×7, 24°C×1, 25°C×1, 23°C×1
+
+Regen (≥ 1 mm, Top 8):
+  05.07.2026  07:00  TT=19.4°C  RF=49%  Wind=4.7m/s  NM=7.5/8  SDK=–h  Regen=6.5mm  → Tagesmax 25.6°C  Peak 11:50  Score=2.1
+  17.07.2021  07:40  TT=19.4°C  RF=83%  Wind=4.0m/s  NM=7.1/8  SDK=1.0h  Regen=4.4mm  → Tagesmax 23.1°C  Peak 13:50  Score=2.8
+  29.07.2023  07:10  TT=19.2°C  RF=79%  Wind=4.1m/s  NM=7.1/8  SDK=3.6h  Regen=9.6mm  → Tagesmax 25.5°C  Peak 10:50  Score=3.1
+  23.07.2024  07:10  TT=19.4°C  RF=79%  Wind=3.5m/s  NM=7.1/8  SDK=7.5h  Regen=2.6mm  → Tagesmax 25.6°C  Peak 16:10  Score=3.4
+  30.07.2022  07:20  TT=19.3°C  RF=76%  Wind=3.9m/s  NM=5.8/8  SDK=8.0h  Regen=12.7mm  → Tagesmax 25.7°C  Peak 15:00  Score=3.4
+  31.07.2021  07:30  TT=19.4°C  RF=74%  Wind=3.3m/s  NM=6.9/8  SDK=4.9h  Regen=18.8mm  → Tagesmax 24.4°C  Peak 14:10  Score=3.6
+  06.07.2025  07:00  TT=19.5°C  RF=61%  Wind=2.3m/s  NM=7.9/8  SDK=3.3h  Regen=2.3mm  → Tagesmax 24.3°C  Peak 09:50  Score=4.4
+  28.07.2021  07:30  TT=19.6°C  RF=0%  Wind=2.4m/s  NM=6.5/8  SDK=1.9h  Regen=10.8mm  → Tagesmax 20.1°C  Peak 08:00  Score=5.2
+  Ø 24.3°C  Median 24.9°C  Range 20.1–25.7°C
+
+Vergleich Prognose / Markt / Analoge:
+  Open-Meteo Tmax:     22.8°C → 23°C
+  Polymarket Favorit:  24°C (37.5%)
+  Bewölkte Analoge:    Ø 25.3°C  Median 25.6°C  Range 23.1–26.2°C
+  Regen-Analoge:       Ø 24.3°C  Median 24.9°C  Range 20.1–25.7°C
+  Beste 10 gesamt:     Ø 25.2°C  Median 25.5°C  Range 23.1–26.2°C

@@ -200,6 +200,10 @@ def parse_data_message(payload: dict) -> list[PushRow]:
     received_at = datetime.now(timezone.utc).replace(tzinfo=None)
     rows: list[PushRow] = []
     for entry in payload.get("data", []):
+        sensor = str(entry.get("sensor", ""))
+      
+        if sensor != "air_temp":
+            continue
         try:
             observed_at = parse_observation_time(entry["date"])
         except (KeyError, ValueError) as error:

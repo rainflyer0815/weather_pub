@@ -201,9 +201,12 @@ def parse_data_message(payload: dict) -> list[PushRow]:
     rows: list[PushRow] = []
     for entry in payload.get("data", []):
         sensor = str(entry.get("sensor", ""))
-      
+        station = str(entry.get("stid", "")).upper()      
         if sensor != "air_temp":
             continue
+        if station not in {"KLGA", "KLGA1M"}:
+            continue
+     
         try:
             observed_at = parse_observation_time(entry["date"])
         except (KeyError, ValueError) as error:

@@ -37,4 +37,4 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           pip install pymysql websocket-client
-          python3 stream_synoptic_push.py --max-runtime 340
+          python3 stream_synoptic_push.py --max-runtime 340 --telegram-all

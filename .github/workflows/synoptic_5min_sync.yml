@@ -40,22 +40,3 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: python3 report_synoptic_db.py
-
-      - name: Compare KLGA1M Push vs Polymarket NYC
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: |
-          pip install matplotlib
-          mkdir -p artifacts
-          python3 compare_push_polymarket.py --days 3 --out-dir artifacts
-
-      - name: Upload compare artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: klga1m-push-vs-polymarket
-          path: artifacts/
-          if-no-files-found: error

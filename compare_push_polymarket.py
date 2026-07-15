@@ -222,6 +222,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         "observed_at_utc",
         "observed_at_ny",
         "received_at_utc",
+        "received_at_ny",
         "temp_c",
         "temp_f",
         "temp_f_round",

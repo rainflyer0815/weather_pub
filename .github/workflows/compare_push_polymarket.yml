@@ -1,0 +1,41 @@
+name: Compare KLGA1M Push vs Polymarket
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Lookback days for push data
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: pip install pymysql matplotlib
+
+      - name: Compare push vs Polymarket
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          mkdir -p artifacts
+          python3 compare_push_polymarket.py \
+            --days "${{ github.event.inputs.days || 3 }}" \
+            --out-dir artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: klga1m-push-vs-polymarket
+          path: artifacts/
+          if-no-files-found: error

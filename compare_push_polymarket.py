@@ -287,7 +287,7 @@ def summarize_day(day: date, day_rows: list[dict], markets: list[dict]) -> str:
 
 def favorite_contains(label: str, whole_f: int) -> bool:
     lower = label.lower().replace("°f", "").strip()
-    digits = [int(tok) for tok in __import__("re").findall(r"\d+", lower)]
+    digits = [int(tok) for tok in re.findall(r"\d+", lower)]
     if not digits:
         return False
     if "below" in lower:

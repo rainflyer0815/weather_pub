@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Pollt Synoptic-Feeds (HFMETAR 5-min / HF-ASOS 1-min) und speichert neue Werte in MariaDB.
+"""LEGACY: Pollt Synoptic-Feeds (HFMETAR 5-min / HF-ASOS 1-min) → MariaDB.
 
-Architektur: cron-job.org triggert (1x pro Minute) den GitHub-Actions-Workflow
-synoptic_5min_sync.yml, der dieses Skript startet. Das Skript holt die letzten
-~3 Stunden Beobachtungen von der Synoptic-API (mehrere Stationen kommagetrennt,
-z. B. KLGA,KLGA1M), liest die bereits gespeicherten Zeitstempel pro Station aus
-der Datenbank und fügt nur die neuen Zeilen ein (UNIQUE KEY
-station+observed_at_utc verhindert Duplikate zusätzlich).
+Nicht mehr im CI verdrahtet. Aktueller Poll-Pfad: poll_madis_hfmetar.py
+(Workflow madis_5min_sync.yml). Gleiche Zieltabelle synoptic_5min_obs und
+gleiche Upsert-Semantik.
+
+Früher: cron-job.org → synoptic_5min_sync.yml → dieses Skript. Holt die
+letzten ~3 Stunden von der Synoptic-API (Stationen kommagetrennt, z. B.
+KLGA,KLGA1M) und fügt nur neue Zeilen ein (UNIQUE KEY station+observed_at_utc).
 
 Konfiguration über Umgebungsvariablen oder .env.db:
   SYNOPTIC_TOKEN     API-Token (Pflicht)

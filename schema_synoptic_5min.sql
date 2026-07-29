@@ -1,7 +1,8 @@
 -- MariaDB 10.6 – Spieldatenbank crondb
 -- In phpMyAdmin: Tab "SQL" → einfügen → Ausführen
 --
--- Speichert den Synoptic-5-Minuten-Feed (HFMETAR) pro Station.
+-- Speichert 5-Min-/METAR-Beobachtungen pro Station (MADIS HFMETAR + AWC METAR
+-- via poll_madis_hfmetar.py; historisch auch Synoptic via poll_synoptic_5min.py).
 -- Dedup über UNIQUE KEY (station, observed_at_utc): der Poller kann beliebig
 -- oft laufen, es wird nur gespeichert, was noch nicht vorhanden ist.
 

@@ -40,4 +40,6 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: python3 report_synoptic_db.py
+        run: |
+          python3 analyze_db.py
+          python3 report_synoptic_db.py --hours 24 --tail 20

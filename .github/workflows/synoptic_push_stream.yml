@@ -1,12 +1,9 @@
 name: Synoptic Push Stream
 
 on:
-  # Alle 30 Minuten wird ein Lauf eingereiht. Dank concurrency läuft immer nur
-  # einer (bis zu ~340 Min); der nächste wartet in der Queue und übernimmt
-  # nahtlos, sobald der laufende endet. Die Session-ID in der DB sorgt dafür,
-  # dass beim Übergang keine Beobachtung verloren geht (Resume bis 3 Tage).
-  schedule:
-    - cron: "*/30 * * * *"
+  # Kein schedule: Synoptic-Trial ist abgelaufen, der Stream würde nur ins
+  # Leere laufen ("Streaming service not allowed"). Manueller Start bleibt
+  # möglich, falls wieder ein bezahlter Zugang existiert.
   workflow_dispatch:
 
 concurrency:

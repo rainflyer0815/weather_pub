@@ -1,0 +1,44 @@
+name: Analyze Push Jumps vs Polymarket
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Lookback days for push export
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: pip install pymysql matplotlib
+
+      - name: Export push CSV then run jump study
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          mkdir -p artifacts
+          python3 compare_push_polymarket.py --days "${{ github.event.inputs.days || 3 }}" --out-dir artifacts
+          python3 analyze_push_jumps_vs_polymarket.py \
+            --csv artifacts/klga1m_push_last_days.csv \
+            --out-dir artifacts \
+            --pre-min 10 \
+            --post-min 20
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-jumps-vs-polymarket
+          path: artifacts/
+          if-no-files-found: error

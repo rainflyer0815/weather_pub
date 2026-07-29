@@ -13,10 +13,11 @@ Quellen:
 Beide Quellen schreiben in dieselbe Tabelle synoptic_5min_obs; Dedup/Upsert
 identisch zum bisherigen Poller (UNIQUE KEY station+observed_at_utc).
 
-Telegram: Sind TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID gesetzt, wird gemeldet,
-wenn sich der neueste 5-Minuten-Wert einer Station gegenüber dem letzten in
-der DB gespeicherten Wert ändert. Nur frische Werte (≤ 30 Min alt) lösen
-eine Nachricht aus – Backfill nach Ausfällen bleibt stumm.
+Telegram: Sind TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID gesetzt, wird bei jedem
+Lauf eine Statusmeldung mit dem aktuellen Wert je Station geschickt – auch
+bei gleicher Temperatur. Hat sich der neueste 5-Minuten-Wert gegenüber dem
+letzten in der DB gespeicherten Wert geändert (nur frische Werte ≤ 30 Min alt,
+Backfill zählt nicht), wird die Änderung zusätzlich mit Pfeil markiert.
 
 Konfiguration über Umgebungsvariablen oder .env.db:
   MADIS_STATION        Stations-ID(s), kommagetrennt, Standard: KLGA
@@ -307,24 +308,17 @@ def detect_value_change(
     )
 
 
-def send_telegram_changes(changes: list[ValueChange]) -> None:
+def post_telegram_message(text: str) -> None:
+    """Schickt eine Textnachricht an den konfigurierten Chat (best effort)."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    if not changes or not token or not chat_id:
+    if not text or not token or not chat_id:
         return
 
-    lines = []
-    for change in changes:
-        fahrenheit = change.new_value * 9 / 5 + 32
-        arrow = "↑" if change.new_value > change.previous_value else "↓"
-        lines.append(
-            f"{change.station} {change.observed_at:%H:%M}Z: {change.new_value:.1f} °C "
-            f"= {fahrenheit:.1f} °F ({arrow} von {change.previous_value:.1f} °C)"
-        )
     payload = urllib.parse.urlencode(
         {
             "chat_id": chat_id,
-            "text": "📡 MADIS Poll\n" + "\n".join(lines),
+            "text": text,
             "disable_web_page_preview": "true",
         }
     ).encode("utf-8")
@@ -342,6 +336,44 @@ def send_telegram_changes(changes: list[ValueChange]) -> None:
     except Exception as error:
         # Telegram-Ausfälle dürfen den DB-Pfad nie stören.
         print(f"Telegram-Sendefehler: {error}", file=sys.stderr)
+
+
+def build_run_report(observations: list[Observation], changes: list[ValueChange]) -> str:
+    """Statuszeile je Station für jeden Lauf – auch ohne Wertänderung."""
+    change_by_station = {change.station: change for change in changes}
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    lines: list[str] = []
+    for station in sorted({obs.station for obs in observations}):
+        with_temp = [
+            obs
+            for obs in observations
+            if obs.station == station and obs.air_temp_c is not None
+        ]
+        if not with_temp:
+            continue
+        latest = max(with_temp, key=lambda obs: obs.observed_at)
+        lag_minutes = (now - latest.observed_at).total_seconds() / 60
+        fahrenheit = latest.air_temp_c * 9 / 5 + 32
+        line = (
+            f"{station} {latest.observed_at:%H:%M}Z: {latest.air_temp_c:.1f} °C "
+            f"= {fahrenheit:.1f} °F (+{lag_minutes:.0f} Min.)"
+        )
+        change = change_by_station.get(station)
+        if change:
+            arrow = "↑" if change.new_value > change.previous_value else "↓"
+            line += f" {arrow} von {change.previous_value:.1f} °C"
+        else:
+            line += " · unverändert"
+        lines.append(line)
+
+    if not lines:
+        return ""
+    return "📡 MADIS Poll\n" + "\n".join(lines)
+
+
+def send_telegram_run_report(observations: list[Observation], changes: list[ValueChange]) -> None:
+    post_telegram_message(build_run_report(observations, changes))
 
 
 def main() -> int:
@@ -388,7 +420,8 @@ def main() -> int:
         print(f"DB-Fehler: {error}", file=sys.stderr)
         return 1
 
-    send_telegram_changes(changes)
+    if not args.dry_run:
+        send_telegram_run_report(observations, changes)
     for change in changes:
         print(
             f"Wertänderung {change.station}: {change.previous_value} → {change.new_value} °C "

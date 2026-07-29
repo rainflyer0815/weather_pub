@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Synoptic-Push-Stream (WebSocket) empfangen und in MariaDB speichern.
 
-Läuft parallel zum Poll-Kanal (poll_synoptic_5min.py), schreibt aber in die
-EIGENE Tabelle synoptic_push_obs (siehe schema_synoptic_push.sql). So bleiben
-Push- und Poll-Latenz direkt vergleichbar und die Kanäle stören sich nicht.
+Läuft parallel zum Poll-Kanal (aktuell poll_madis_hfmetar.py; Legacy:
+poll_synoptic_5min.py), schreibt aber in die EIGENE Tabelle synoptic_push_obs
+(siehe schema_synoptic_push.sql). So bleiben Push- und Poll-Latenz direkt
+vergleichbar und die Kanäle stören sich nicht.
+
+Hinweis: Ohne bezahlten Synoptic-Zugang schlägt der Stream fehl
+(„Streaming service not allowed“). Der Workflow synoptic_push_stream.yml hat
+deshalb keinen Schedule mehr – nur noch manueller Start.
 
 Ablauf:
   1. Session-ID des letzten Laufs aus synoptic_push_state lesen.

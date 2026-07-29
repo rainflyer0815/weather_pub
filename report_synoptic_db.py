@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Liest die Tabelle synoptic_5min_obs aus und druckt eine Füllstands-Auswertung.
 
-Läuft als Report-Schritt im Workflow synoptic_5min_sync.yml (nutzt die
+Läuft als Report-Schritt im Workflow madis_5min_sync.yml (nutzt die
 DB_*-Secrets) oder lokal mit .env.db.
 
 Nutzung:

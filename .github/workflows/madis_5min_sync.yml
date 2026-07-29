@@ -1,13 +1,12 @@
-name: 5min Feed Sync (MADIS + METAR)
+name: MADIS 5min Feed Sync
 
 on:
-  # Nur workflow_dispatch – externer Trigger via cron-job.org (1x pro Minute).
-  # Dateiname bleibt synoptic_5min_sync.yml, damit die Dispatch-URL bei
-  # cron-job.org unverändert weiter funktioniert.
+  # Nur workflow_dispatch – externer Trigger via cron-job.org (alle 2 Min).
+  # Dispatch-URL: .../actions/workflows/madis_5min_sync.yml/dispatches
   workflow_dispatch:
 
 concurrency:
-  group: synoptic-5min-sync
+  group: madis-5min-sync
   # Läufe überlappen sich nicht; ein neuer wartet statt abzubrechen.
   cancel-in-progress: false
 
@@ -28,9 +27,11 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           pip install pymysql netCDF4 numpy
-          python3 poll_madis_hfmetar.py
+          python3 poll_madis_hfmetar.py --hours-back 1
 
       - name: Report DB fill
         env:

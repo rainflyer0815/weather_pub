@@ -13,9 +13,16 @@ Quellen:
 Beide Quellen schreiben in dieselbe Tabelle synoptic_5min_obs; Dedup/Upsert
 identisch zum bisherigen Poller (UNIQUE KEY station+observed_at_utc).
 
+Telegram: Sind TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID gesetzt, wird gemeldet,
+wenn sich der neueste 5-Minuten-Wert einer Station gegenüber dem letzten in
+der DB gespeicherten Wert ändert. Nur frische Werte (≤ 30 Min alt) lösen
+eine Nachricht aus – Backfill nach Ausfällen bleibt stumm.
+
 Konfiguration über Umgebungsvariablen oder .env.db:
-  MADIS_STATION      Stations-ID(s), kommagetrennt, Standard: KLGA
+  MADIS_STATION        Stations-ID(s), kommagetrennt, Standard: KLGA
   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+  TELEGRAM_BOT_TOKEN   optional – Telegram bei Wertänderung
+  TELEGRAM_CHAT_ID     optional
 
 Nutzung:
   python3 poll_madis_hfmetar.py             # pollen + speichern
@@ -40,8 +47,11 @@ from pathlib import Path
 USER_AGENT = "weather/1.0 (MADIS 5-min feed poller)"
 MADIS_BASE_URL = "https://madis-data.ncep.noaa.gov/madisPublic1/data/LDAD/hfmetar/netCDF"
 AWC_METAR_URL = "https://aviationweather.gov/api/data/metar"
+TELEGRAM_API = "https://api.telegram.org"
 DEFAULT_STATION = "KLGA"
 DEFAULT_HOURS_BACK = 2
+# Nur Werte, die höchstens so alt sind, lösen eine Telegram-Meldung aus.
+REALTIME_MAX_LAG_MINUTES = 30
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR / ".env.db"
 
@@ -60,6 +70,15 @@ ON DUPLICATE KEY UPDATE
 SELECT_EXISTING_SQL = """
 SELECT observed_at_utc FROM synoptic_5min_obs
 WHERE station = %s AND observed_at_utc >= %s AND air_temp_c IS NOT NULL
+"""
+
+# Letzter gespeicherter 5-Minuten-Wert einer Station – Vergleichsbasis für
+# die Telegram-Meldung bei Wertänderung (METARs bleiben außen vor, sonst
+# würde jede stündliche Dezimaltemperatur eine Pseudo-Änderung auslösen).
+SELECT_LATEST_5MIN_SQL = """
+SELECT observed_at_utc, air_temp_c FROM synoptic_5min_obs
+WHERE station = %s AND is_metar = 0 AND air_temp_c IS NOT NULL
+ORDER BY observed_at_utc DESC LIMIT 1
 """
 
 
@@ -196,10 +215,20 @@ def connect_db():
     )
 
 
-def store_new_observations(observations: list[Observation], dry_run: bool) -> tuple[int, int]:
-    """Liefert (neu, bereits vorhanden). Dedup läuft pro Station."""
+@dataclass(frozen=True)
+class ValueChange:
+    station: str
+    observed_at: datetime
+    new_value: float
+    previous_value: float
+
+
+def store_new_observations(
+    observations: list[Observation], dry_run: bool
+) -> tuple[int, int, list[ValueChange]]:
+    """Liefert (neu, bereits vorhanden, Wertänderungen). Dedup läuft pro Station."""
     if not observations:
-        return 0, 0
+        return 0, 0, []
 
     fetched_at = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
@@ -207,21 +236,26 @@ def store_new_observations(observations: list[Observation], dry_run: bool) -> tu
         for obs in sorted(observations, key=lambda o: (o.station, o.observed_at)):
             kind = "METAR" if obs.is_metar else "5min "
             print(f"[dry-run] {obs.station} {obs.observed_at:%Y-%m-%d %H:%M}Z {kind} {obs.air_temp_c}°C")
-        return len(observations), 0
+        return len(observations), 0, []
 
     by_station: dict[str, list[Observation]] = {}
     for obs in observations:
         by_station.setdefault(obs.station, []).append(obs)
 
     new_count = 0
+    changes: list[ValueChange] = []
     connection = connect_db()
     try:
         with connection.cursor() as cursor:
             for station, station_obs in by_station.items():
+                cursor.execute(SELECT_LATEST_5MIN_SQL, (station,))
+                previous = cursor.fetchone()  # (observed_at, temp) oder None
+
                 earliest = min(obs.observed_at for obs in station_obs)
                 cursor.execute(SELECT_EXISTING_SQL, (station, earliest))
                 existing = {row[0] for row in cursor.fetchall()}
 
+                inserted_5min: list[Observation] = []
                 for obs in station_obs:
                     if obs.observed_at in existing:
                         continue
@@ -238,11 +272,76 @@ def store_new_observations(observations: list[Observation], dry_run: bool) -> tu
                         ),
                     )
                     new_count += 1
+                    if not obs.is_metar and obs.air_temp_c is not None:
+                        inserted_5min.append(obs)
+
+                change = detect_value_change(previous, inserted_5min, fetched_at)
+                if change:
+                    changes.append(change)
         connection.commit()
     finally:
         connection.close()
 
-    return new_count, len(observations) - new_count
+    return new_count, len(observations) - new_count, changes
+
+
+def detect_value_change(
+    previous: tuple | None, inserted_5min: list[Observation], now: datetime
+) -> ValueChange | None:
+    """Wertänderung nur für frische Daten; Erstbefüllung und Backfill bleiben stumm."""
+    if previous is None or not inserted_5min:
+        return None
+    prev_observed, prev_temp = previous[0], float(previous[1])
+    newest = max(inserted_5min, key=lambda obs: obs.observed_at)
+    if newest.observed_at <= prev_observed:
+        return None
+    if (now - newest.observed_at).total_seconds() > REALTIME_MAX_LAG_MINUTES * 60:
+        return None
+    if newest.air_temp_c == prev_temp:
+        return None
+    return ValueChange(
+        station=newest.station,
+        observed_at=newest.observed_at,
+        new_value=newest.air_temp_c,
+        previous_value=prev_temp,
+    )
+
+
+def send_telegram_changes(changes: list[ValueChange]) -> None:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not changes or not token or not chat_id:
+        return
+
+    lines = []
+    for change in changes:
+        fahrenheit = change.new_value * 9 / 5 + 32
+        arrow = "↑" if change.new_value > change.previous_value else "↓"
+        lines.append(
+            f"{change.station} {change.observed_at:%H:%M}Z: {change.new_value:.1f} °C "
+            f"= {fahrenheit:.1f} °F ({arrow} von {change.previous_value:.1f} °C)"
+        )
+    payload = urllib.parse.urlencode(
+        {
+            "chat_id": chat_id,
+            "text": "📡 MADIS Poll\n" + "\n".join(lines),
+            "disable_web_page_preview": "true",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"{TELEGRAM_API}/bot{token}/sendMessage",
+        data=payload,
+        headers={"User-Agent": USER_AGENT},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        if not body.get("ok"):
+            print(f"Telegram-API-Fehler: {body}", file=sys.stderr)
+    except Exception as error:
+        # Telegram-Ausfälle dürfen den DB-Pfad nie stören.
+        print(f"Telegram-Sendefehler: {error}", file=sys.stderr)
 
 
 def main() -> int:
@@ -284,10 +383,17 @@ def main() -> int:
         return 1
 
     try:
-        new_count, existing_count = store_new_observations(observations, args.dry_run)
+        new_count, existing_count, changes = store_new_observations(observations, args.dry_run)
     except Exception as error:
         print(f"DB-Fehler: {error}", file=sys.stderr)
         return 1
+
+    send_telegram_changes(changes)
+    for change in changes:
+        print(
+            f"Wertänderung {change.station}: {change.previous_value} → {change.new_value} °C "
+            f"um {change.observed_at:%H:%M}Z (Telegram gesendet)"
+        )
 
     print(
         f"{station_arg}: {len(observations)} Werte im Fenster, {new_count} neu gespeichert, "

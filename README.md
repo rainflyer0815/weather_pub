@@ -50,14 +50,15 @@ Stream ist wegen abgelaufenem Trial pausiert (manueller Start bleibt möglich).
 | Synoptic Push | `stream_synoptic_push.py` | 1-Min Sensorwerte (z. B. `air_temp`) | ~3–4 Min observed→received | Bezahlter Zugang nötig; ohne Token: „Streaming service not allowed“ |
 | DWD CDC 10-min | `monitor_dwd_feed_lag.py` | Station 01262 (München) | gemessen vs. METAR | Log → `dwd_feed_lag_log.csv` + optional DB |
 
-**Upsert-Regel** (`synoptic_5min_obs`): `UNIQUE (station, observed_at_utc)`.
-Nachgereichte Werte heilen `NULL`s; vorhandene Werte werden nie durch `NULL`
-überschrieben (`COALESCE` im `ON DUPLICATE KEY UPDATE`).
+**Poll-Semantik** (`synoptic_5min_obs` + `synoptic_poll_runs`): Jeder Poll-Lauf
+bekommt eine `poll_counter`-ID und schreibt **alle** gelesenen Beobachtungen
+(`UNIQUE (poll_counter, station, observed_at_utc)`). Altbestand ohne Counter:
+Migration `schema_synoptic_5min_poll_counter_migrate.sql` (einmalig).
 
-**Telegram bei MADIS-Poll:** Nur wenn sich der neueste 5-Min-Wert (`is_metar=0`)
-gegenüber dem letzten DB-Wert ändert **und** der Wert ≤ 30 Min alt ist. METARs
-lösen keine Änderungsmeldung aus (sonst Pseudo-Änderungen durch Dezimaltemps).
-Backfill nach Ausfällen bleibt stumm.
+**Telegram bei MADIS-Poll:** Bei jedem Lauf eine Statuszeile je Station. Pfeil
+`↑/↓ von …`, wenn sich der neueste 5-Min-Wert (`is_metar=0`) gegenüber dem
+letzten DB-Wert ändert **und** der Wert ≤ 30 Min alt ist. Sonst `· unverändert`.
+METARs lösen keine Änderungsmeldung aus. Backfill nach Ausfällen bleibt stumm.
 
 ## Konfiguration
 
@@ -78,7 +79,8 @@ GitHub-Secrets für Workflows: `DB_*`, optional `TELEGRAM_*`, für Push zusätzl
 
 In phpMyAdmin (oder CLI) die SQL-Dateien ausführen:
 
-1. `schema_synoptic_5min.sql` – Poll-Tabelle (MADIS/AWC und Legacy-Synoptic)
+1. `schema_synoptic_5min.sql` – Poll-Tabelle + `synoptic_poll_runs`
+   (bei bestehender DB: zusätzlich `schema_synoptic_5min_poll_counter_migrate.sql`)
 2. `schema_synoptic_push.sql` – Push-Obs + Session-State (oder automatisch durch den Streamer)
 3. `schema_crondb.sql` – `dwd_feed_lag`
 

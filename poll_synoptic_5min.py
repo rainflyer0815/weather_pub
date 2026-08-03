@@ -3,11 +3,11 @@
 
 Nicht mehr im CI verdrahtet. Aktueller Poll-Pfad: poll_madis_hfmetar.py
 (Workflow madis_5min_sync.yml). Gleiche Zieltabelle synoptic_5min_obs und
-gleiche Upsert-Semantik.
+gleiche Poll-Counter-Semantik (jeder Lauf schreibt alle Beobachtungen).
 
 Früher: cron-job.org → synoptic_5min_sync.yml → dieses Skript. Holt die
 letzten ~3 Stunden von der Synoptic-API (Stationen kommagetrennt, z. B.
-KLGA,KLGA1M) und fügt nur neue Zeilen ein (UNIQUE KEY station+observed_at_utc).
+KLGA,KLGA1M) und schreibt sie unter neuer poll_counter-ID.
 
 Konfiguration über Umgebungsvariablen oder .env.db:
   SYNOPTIC_TOKEN     API-Token (Pflicht)
@@ -39,23 +39,21 @@ DEFAULT_RECENT_MINUTES = 180
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR / ".env.db"
 
-# Upsert: nachgereichte Werte (z. B. air_temp zunaechst NULL) heilen sich selbst,
-# vorhandene Werte werden nie durch NULL ueberschrieben (COALESCE).
-INSERT_SQL = """
-INSERT INTO synoptic_5min_obs (
-    station, observed_at_utc, air_temp_c, air_temp_f, is_metar, metar_raw, fetched_at_utc
-) VALUES (%s, %s, %s, %s, %s, %s, %s)
-ON DUPLICATE KEY UPDATE
-    air_temp_c = COALESCE(VALUES(air_temp_c), air_temp_c),
-    air_temp_f = COALESCE(VALUES(air_temp_f), air_temp_f),
-    metar_raw = COALESCE(VALUES(metar_raw), metar_raw)
+# Jeder Poll schreibt unter neuer poll_counter-ID (wie poll_madis_hfmetar.py).
+INSERT_POLL_RUN_SQL = """
+INSERT INTO synoptic_poll_runs (polled_at_utc, observation_count)
+VALUES (%s, 0)
 """
 
-# Nur Zeilen mit vorhandener Temperatur gelten als vollstaendig; unvollstaendige
-# werden erneut geschrieben, damit der Upsert sie nachfuellen kann.
-SELECT_EXISTING_SQL = """
-SELECT observed_at_utc FROM synoptic_5min_obs
-WHERE station = %s AND observed_at_utc >= %s AND air_temp_c IS NOT NULL
+UPDATE_POLL_RUN_SQL = """
+UPDATE synoptic_poll_runs SET observation_count = %s WHERE poll_counter = %s
+"""
+
+INSERT_SQL = """
+INSERT INTO synoptic_5min_obs (
+    poll_counter, station, observed_at_utc, air_temp_c, air_temp_f,
+    is_metar, metar_raw, fetched_at_utc
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -153,8 +151,14 @@ def connect_db():
     if missing:
         raise RuntimeError(f"Fehlende DB-Konfiguration: {', '.join(missing)}")
 
+    host = config["DB_HOST"]
+    for prefix in ("https://", "http://"):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    host = host.rstrip("/")
+
     return pymysql.connect(
-        host=config["DB_HOST"],
+        host=host,
         port=int(os.environ.get("DB_PORT", "3306")),
         user=config["DB_USER"],
         password=config["DB_PASSWORD"],
@@ -165,7 +169,7 @@ def connect_db():
 
 
 def store_new_observations(observations: list[Observation], dry_run: bool) -> tuple[int, int]:
-    """Liefert (neu, bereits vorhanden). Dedup läuft pro Station."""
+    """Schreibt alle Beobachtungen unter neuer poll_counter-ID."""
     if not observations:
         return 0, 0
 
@@ -176,40 +180,32 @@ def store_new_observations(observations: list[Observation], dry_run: bool) -> tu
             print(f"[dry-run] {obs.station} {obs.observed_at:%Y-%m-%d %H:%M}Z {obs.air_temp_c}°C")
         return len(observations), 0
 
-    by_station: dict[str, list[Observation]] = {}
-    for obs in observations:
-        by_station.setdefault(obs.station, []).append(obs)
-
-    new_count = 0
     connection = connect_db()
     try:
         with connection.cursor() as cursor:
-            for station, station_obs in by_station.items():
-                earliest = min(obs.observed_at for obs in station_obs)
-                cursor.execute(SELECT_EXISTING_SQL, (station, earliest))
-                existing = {row[0] for row in cursor.fetchall()}
-
-                for obs in station_obs:
-                    if obs.observed_at in existing:
-                        continue
-                    cursor.execute(
-                        INSERT_SQL,
-                        (
-                            obs.station,
-                            obs.observed_at,
-                            obs.air_temp_c,
-                            obs.air_temp_f,
-                            int(obs.is_metar),
-                            obs.metar_raw,
-                            fetched_at,
-                        ),
-                    )
-                    new_count += 1
+            cursor.execute(INSERT_POLL_RUN_SQL, (fetched_at,))
+            poll_counter = int(cursor.lastrowid)
+            for obs in observations:
+                cursor.execute(
+                    INSERT_SQL,
+                    (
+                        poll_counter,
+                        obs.station,
+                        obs.observed_at,
+                        obs.air_temp_c,
+                        obs.air_temp_f,
+                        int(obs.is_metar),
+                        obs.metar_raw,
+                        fetched_at,
+                    ),
+                )
+            cursor.execute(UPDATE_POLL_RUN_SQL, (len(observations), poll_counter))
         connection.commit()
+        print(f"Poll #{poll_counter}: {len(observations)} Beobachtungen geschrieben.")
     finally:
         connection.close()
 
-    return new_count, len(observations) - new_count
+    return len(observations), 0
 
 
 def main() -> int:

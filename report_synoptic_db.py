@@ -35,8 +35,14 @@ def load_env_file(path: Path) -> None:
 def connect_db():
     import pymysql
 
+    host = os.environ["DB_HOST"].strip()
+    for prefix in ("https://", "http://"):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    host = host.rstrip("/")
+
     return pymysql.connect(
-        host=os.environ["DB_HOST"].strip(),
+        host=host,
         port=int(os.environ.get("DB_PORT", "3306")),
         user=os.environ["DB_USER"].strip(),
         password=os.environ["DB_PASSWORD"].strip(),
@@ -136,39 +142,63 @@ def main() -> int:
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT station, COUNT(*), MIN(observed_at_utc), MAX(observed_at_utc), "
+                "SELECT station, COUNT(*), COUNT(DISTINCT observed_at_utc), "
+                "MIN(observed_at_utc), MAX(observed_at_utc), "
                 "SUM(is_metar), ROUND(MIN(air_temp_c),1), ROUND(MAX(air_temp_c),1) "
                 "FROM synoptic_5min_obs GROUP BY station"
             )
             print("=== Gesamtfüllung ===")
             for row in cursor.fetchall():
-                station, total, first, last, metars, tmin, tmax = row
+                station, total, distinct_obs, first, last, metars, tmin, tmax = row
                 print(
-                    f"{station}: {total} Zeilen | {first} bis {last} UTC | "
-                    f"{int(metars or 0)} METAR/SPECI | Temp {tmin}–{tmax} °C"
+                    f"{station}: {total} Zeilen / {distinct_obs} eindeutige Zeiten | "
+                    f"{first} bis {last} UTC | "
+                    f"{int(metars or 0)} METAR/SPECI-Zeilen | Temp {tmin}–{tmax} °C"
+                )
+
+            cursor.execute("SHOW TABLES LIKE 'synoptic_poll_runs'")
+            if cursor.fetchone():
+                cursor.execute(
+                    "SELECT COUNT(*), MIN(poll_counter), MAX(poll_counter), "
+                    "MIN(polled_at_utc), MAX(polled_at_utc) FROM synoptic_poll_runs"
+                )
+                n_runs, min_pc, max_pc, first_poll, last_poll = cursor.fetchone()
+                print(
+                    f"\nPoll-Läufe: {n_runs} (#{min_pc}–#{max_pc}) | "
+                    f"{first_poll} bis {last_poll} UTC"
                 )
 
             cursor.execute(
                 "SELECT station, DATE_FORMAT(observed_at_utc, '%%Y-%%m-%%d %%H:00') AS h, "
-                "COUNT(*), SUM(is_metar), ROUND(AVG(air_temp_c),1) "
+                "COUNT(DISTINCT observed_at_utc), "
+                "COUNT(DISTINCT CASE WHEN is_metar=1 THEN observed_at_utc END), "
+                "ROUND(AVG(air_temp_c),1) "
                 "FROM synoptic_5min_obs "
                 "WHERE observed_at_utc >= UTC_TIMESTAMP() - INTERVAL %s HOUR "
                 "GROUP BY station, h ORDER BY station, h",
                 (args.hours,),
             )
-            print(f"\n=== Werte pro Stunde (letzte {args.hours} h; Soll: 1M-Station ~60, sonst 12 + 1 METAR) ===")
+            print(
+                f"\n=== Eindeutige Zeiten pro Stunde "
+                f"(letzte {args.hours} h; Soll: 1M-Station ~60, sonst 12 + 1 METAR) ==="
+            )
             for station, hour, count, metars, avg_temp in cursor.fetchall():
                 target = 55 if station.upper().endswith("1M") else 12
                 flag = "" if count >= target else "  ← LÜCKE"
-                print(f"{station:8s} {hour}  {count:2d} Werte  {int(metars or 0)} METAR  Ø {avg_temp} °C{flag}")
+                print(
+                    f"{station:8s} {hour}  {count:2d} Zeiten  "
+                    f"{int(metars or 0)} METAR  Ø {avg_temp} °C{flag}"
+                )
 
-            # Delay-Verteilung observed -> fetched. Zeilen mit Lag > 120 Min sind
-            # Backfill der ersten Läufe (180-Min-Fenster) und werden ausgeschlossen.
+            # Delay: Erstsichtung je (station, observed_at) = MIN(fetched_at).
             cursor.execute(
-                "SELECT station, TIMESTAMPDIFF(SECOND, observed_at_utc, fetched_at_utc) "
+                "SELECT station, "
+                "TIMESTAMPDIFF(SECOND, observed_at_utc, MIN(fetched_at_utc)) "
                 "FROM synoptic_5min_obs "
                 "WHERE fetched_at_utc IS NOT NULL "
-                "AND TIMESTAMPDIFF(SECOND, observed_at_utc, fetched_at_utc) <= 7200"
+                "GROUP BY station, observed_at_utc "
+                "HAVING TIMESTAMPDIFF(SECOND, observed_at_utc, MIN(fetched_at_utc)) "
+                "BETWEEN 0 AND 7200"
             )
             lags_by_station: dict[str, list[float]] = {}
             for station, lag_seconds in cursor.fetchall():
@@ -207,16 +237,27 @@ def main() -> int:
             report_push_channel(cursor, args.tail)
 
             cursor.execute(
-                "SELECT station, observed_at_utc, air_temp_c, air_temp_f, is_metar, fetched_at_utc "
-                "FROM synoptic_5min_obs ORDER BY observed_at_utc DESC LIMIT %s",
+                "SELECT station, poll_counter, observed_at_utc, air_temp_c, air_temp_f, "
+                "is_metar, fetched_at_utc "
+                "FROM synoptic_5min_obs ORDER BY poll_counter DESC, observed_at_utc DESC "
+                "LIMIT %s",
                 (args.tail,),
             )
-            print(f"\n=== Letzte {args.tail} Werte ===")
-            for station, observed, temp_c, temp_f, is_metar, fetched in reversed(cursor.fetchall()):
+            print(f"\n=== Letzte {args.tail} Werte (nach Poll) ===")
+            for (
+                station,
+                poll_counter,
+                observed,
+                temp_c,
+                temp_f,
+                is_metar,
+                fetched,
+            ) in reversed(cursor.fetchall()):
                 kind = "METAR" if is_metar else "obs  "
                 lag = (fetched - observed).total_seconds() / 60
                 print(
-                    f"{station:8s} {observed:%Y-%m-%d %H:%M}Z  {kind}  {temp_c} °C = {temp_f} °F  "
+                    f"#{poll_counter:<6} {station:8s} {observed:%Y-%m-%d %H:%M}Z  {kind}  "
+                    f"{temp_c} °C = {temp_f} °F  "
                     f"(gespeichert +{lag:.0f} Min.)"
                 )
     finally:

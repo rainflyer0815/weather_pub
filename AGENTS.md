@@ -26,7 +26,9 @@ Third-party deps are installed to the user site by the startup update script:
 - DB scripts (`poll_madis_hfmetar.py`, `poll_synoptic_5min.py`,
   `stream_synoptic_push.py`, `report_synoptic_db.py`, `query_db.py`,
   `compare_push_polymarket.py`) need `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD`
-  (a MariaDB instance).
+  (a MariaDB instance). Existing DBs need
+  `schema_synoptic_5min_poll_counter_migrate.sql` once so each poll writes under
+  a new `poll_counter` (table `synoptic_poll_runs`).
 - `telegram_stake_alert.py` needs `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
 - Synoptic scripts need `SYNOPTIC_TOKEN`.
 Local config: copy the `*.example` files (`.env.db`, `.env.db.api`,

@@ -10,8 +10,10 @@ Quellen:
   * aviationweather.gov Data API: METAR/SPECI mit Dezimaltemperatur aus der
     T-Group → ersetzt die :51-METARs, die Synoptic mitlieferte.
 
-Beide Quellen schreiben in dieselbe Tabelle synoptic_5min_obs; Dedup/Upsert
-identisch zum bisherigen Poller (UNIQUE KEY station+observed_at_utc).
+Jeder Poll-Lauf legt einen Eintrag in synoptic_poll_runs an (poll_counter) und
+schreibt ALLE gelesenen Beobachtungen nach synoptic_5min_obs
+(UNIQUE KEY poll_counter+station+observed_at_utc). Damit sind Telegram-Status
+und Poll-Latenzen aus der DB rekonstruierbar.
 
 Telegram: Sind TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID gesetzt, wird bei jedem
 Lauf eine Statusmeldung mit dem aktuellen Wert je Station geschickt – auch
@@ -56,21 +58,21 @@ REALTIME_MAX_LAG_MINUTES = 30
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR / ".env.db"
 
-# Identisch zum Synoptic-Poller: nachgereichte Werte heilen sich selbst,
-# vorhandene Werte werden nie durch NULL überschrieben.
-INSERT_SQL = """
-INSERT INTO synoptic_5min_obs (
-    station, observed_at_utc, air_temp_c, air_temp_f, is_metar, metar_raw, fetched_at_utc
-) VALUES (%s, %s, %s, %s, %s, %s, %s)
-ON DUPLICATE KEY UPDATE
-    air_temp_c = COALESCE(VALUES(air_temp_c), air_temp_c),
-    air_temp_f = COALESCE(VALUES(air_temp_f), air_temp_f),
-    metar_raw = COALESCE(VALUES(metar_raw), metar_raw)
+INSERT_POLL_RUN_SQL = """
+INSERT INTO synoptic_poll_runs (polled_at_utc, observation_count)
+VALUES (%s, 0)
 """
 
-SELECT_EXISTING_SQL = """
-SELECT observed_at_utc FROM synoptic_5min_obs
-WHERE station = %s AND observed_at_utc >= %s AND air_temp_c IS NOT NULL
+UPDATE_POLL_RUN_SQL = """
+UPDATE synoptic_poll_runs SET observation_count = %s WHERE poll_counter = %s
+"""
+
+# Jeder Poll schreibt alle Beobachtungen unter seiner poll_counter-ID.
+INSERT_SQL = """
+INSERT INTO synoptic_5min_obs (
+    poll_counter, station, observed_at_utc, air_temp_c, air_temp_f,
+    is_metar, metar_raw, fetched_at_utc
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 # Letzter gespeicherter 5-Minuten-Wert einer Station – Vergleichsbasis für
@@ -79,7 +81,7 @@ WHERE station = %s AND observed_at_utc >= %s AND air_temp_c IS NOT NULL
 SELECT_LATEST_5MIN_SQL = """
 SELECT observed_at_utc, air_temp_c FROM synoptic_5min_obs
 WHERE station = %s AND is_metar = 0 AND air_temp_c IS NOT NULL
-ORDER BY observed_at_utc DESC LIMIT 1
+ORDER BY observed_at_utc DESC, poll_counter DESC LIMIT 1
 """
 
 
@@ -205,8 +207,14 @@ def connect_db():
     if missing:
         raise RuntimeError(f"Fehlende DB-Konfiguration: {', '.join(missing)}")
 
+    host = config["DB_HOST"]
+    for prefix in ("https://", "http://"):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    host = host.rstrip("/")
+
     return pymysql.connect(
-        host=config["DB_HOST"],
+        host=host,
         port=int(os.environ.get("DB_PORT", "3306")),
         user=config["DB_USER"],
         password=config["DB_PASSWORD"],
@@ -227,63 +235,85 @@ class ValueChange:
 def store_new_observations(
     observations: list[Observation], dry_run: bool
 ) -> tuple[int, int, list[ValueChange]]:
-    """Liefert (neu, bereits vorhanden, Wertänderungen). Dedup läuft pro Station."""
+    """Schreibt alle Beobachtungen eines Polls unter neuer poll_counter-ID.
+
+    Rückgabe: (geschrieben, 0, Wertänderungen). Der zweite Wert bleibt 0
+    (kein Skip mehr); Signatur bleibt kompatibel zum Aufrufer.
+    """
     if not observations:
         return 0, 0, []
 
     fetched_at = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
+    # Pro (station, observed_at, is_metar) nur einmal – Quellen können überlappen.
+    deduped: dict[tuple[str, datetime, bool], Observation] = {}
+    for obs in observations:
+        deduped[(obs.station, obs.observed_at, obs.is_metar)] = obs
+    observations = sorted(
+        deduped.values(), key=lambda obs: (obs.station, obs.observed_at, obs.is_metar)
+    )
+
     if dry_run:
-        for obs in sorted(observations, key=lambda o: (o.station, o.observed_at)):
+        print(f"[dry-run] würde Poll mit {len(observations)} Beobachtungen schreiben")
+        for obs in observations:
             kind = "METAR" if obs.is_metar else "5min "
-            print(f"[dry-run] {obs.station} {obs.observed_at:%Y-%m-%d %H:%M}Z {kind} {obs.air_temp_c}°C")
+            print(
+                f"[dry-run] {obs.station} {obs.observed_at:%Y-%m-%d %H:%M}Z "
+                f"{kind} {obs.air_temp_c}°C"
+            )
         return len(observations), 0, []
 
     by_station: dict[str, list[Observation]] = {}
     for obs in observations:
         by_station.setdefault(obs.station, []).append(obs)
 
-    new_count = 0
     changes: list[ValueChange] = []
     connection = connect_db()
     try:
         with connection.cursor() as cursor:
-            for station, station_obs in by_station.items():
+            previous_by_station: dict[str, tuple | None] = {}
+            for station in by_station:
                 cursor.execute(SELECT_LATEST_5MIN_SQL, (station,))
-                previous = cursor.fetchone()  # (observed_at, temp) oder None
+                previous_by_station[station] = cursor.fetchone()
 
-                earliest = min(obs.observed_at for obs in station_obs)
-                cursor.execute(SELECT_EXISTING_SQL, (station, earliest))
-                existing = {row[0] for row in cursor.fetchall()}
+            cursor.execute(INSERT_POLL_RUN_SQL, (fetched_at,))
+            poll_counter = int(cursor.lastrowid)
 
-                inserted_5min: list[Observation] = []
-                for obs in station_obs:
-                    if obs.observed_at in existing:
-                        continue
-                    cursor.execute(
-                        INSERT_SQL,
-                        (
-                            obs.station,
-                            obs.observed_at,
-                            obs.air_temp_c,
-                            obs.air_temp_f,
-                            int(obs.is_metar),
-                            obs.metar_raw,
-                            fetched_at,
-                        ),
-                    )
-                    new_count += 1
-                    if not obs.is_metar and obs.air_temp_c is not None:
-                        inserted_5min.append(obs)
+            for obs in observations:
+                cursor.execute(
+                    INSERT_SQL,
+                    (
+                        poll_counter,
+                        obs.station,
+                        obs.observed_at,
+                        obs.air_temp_c,
+                        obs.air_temp_f,
+                        int(obs.is_metar),
+                        obs.metar_raw,
+                        fetched_at,
+                    ),
+                )
 
-                change = detect_value_change(previous, inserted_5min, fetched_at)
+            cursor.execute(UPDATE_POLL_RUN_SQL, (len(observations), poll_counter))
+
+            for station, station_obs in by_station.items():
+                inserted_5min = [
+                    obs
+                    for obs in station_obs
+                    if not obs.is_metar and obs.air_temp_c is not None
+                ]
+                change = detect_value_change(
+                    previous_by_station.get(station), inserted_5min, fetched_at
+                )
                 if change:
                     changes.append(change)
+
         connection.commit()
+        print(f"Poll #{poll_counter}: {len(observations)} Beobachtungen geschrieben.")
     finally:
         connection.close()
 
-    return new_count, len(observations) - new_count, changes
+    return len(observations), 0, changes
 
 
 def detect_value_change(
@@ -429,8 +459,8 @@ def main() -> int:
         )
 
     print(
-        f"{station_arg}: {len(observations)} Werte im Fenster, {new_count} neu gespeichert, "
-        f"{existing_count} bereits vorhanden."
+        f"{station_arg}: Poll schrieb {new_count} Beobachtungen "
+        f"({existing_count} Skips – immer 0 bei Poll-Counter-Modus)."
     )
     for name in sorted({obs.station for obs in observations}):
         latest = max(

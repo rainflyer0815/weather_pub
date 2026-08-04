@@ -368,17 +368,11 @@ def post_telegram_message(text: str) -> None:
         print(f"Telegram-Sendefehler: {error}", file=sys.stderr)
 
 
-def latest_metar_kind(observations: list[Observation]) -> str:
-    """Erste 5 Zeichen von metar_raw des neuesten METAR/SPECI (sonst leer)."""
-    candidates = [
-        obs
-        for obs in observations
-        if obs.metar_raw and obs.metar_raw[:5] in ("METAR", "SPECI")
-    ]
-    if not candidates:
-        return ""
-    latest = max(candidates, key=lambda obs: obs.observed_at)
-    return latest.metar_raw[:5]
+def metar_kind_from_obs(obs: Observation) -> str:
+    """METAR/SPECI nur wenn metar_raw damit beginnt – sonst leer (z.B. MADIS-CSV)."""
+    raw = obs.metar_raw or ""
+    prefix = raw[:5]
+    return prefix if prefix in ("METAR", "SPECI") else ""
 
 
 def build_run_report(observations: list[Observation], changes: list[ValueChange]) -> str:
@@ -387,6 +381,7 @@ def build_run_report(observations: list[Observation], changes: list[ValueChange]
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     lines: list[str] = []
+    displayed: list[Observation] = []
     for station in sorted({obs.station for obs in observations}):
         with_temp = [
             obs
@@ -396,6 +391,7 @@ def build_run_report(observations: list[Observation], changes: list[ValueChange]
         if not with_temp:
             continue
         latest = max(with_temp, key=lambda obs: obs.observed_at)
+        displayed.append(latest)
         lag_minutes = (now - latest.observed_at).total_seconds() / 60
         fahrenheit = latest.air_temp_c * 9 / 5 + 32
         line = (
@@ -412,7 +408,9 @@ def build_run_report(observations: list[Observation], changes: list[ValueChange]
 
     if not lines:
         return ""
-    kind = latest_metar_kind(observations)
+    # Tag nur aus der angezeigten Beobachtung (nicht aus älteren AWC-METARs im Batch).
+    overall = max(displayed, key=lambda obs: obs.observed_at)
+    kind = metar_kind_from_obs(overall)
     header = f"📡 MADIS Poll {kind}".rstrip()
     return header + "\n" + "\n".join(lines)
 

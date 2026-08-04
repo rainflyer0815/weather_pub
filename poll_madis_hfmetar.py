@@ -368,6 +368,19 @@ def post_telegram_message(text: str) -> None:
         print(f"Telegram-Sendefehler: {error}", file=sys.stderr)
 
 
+def latest_metar_kind(observations: list[Observation]) -> str:
+    """Erste 5 Zeichen von metar_raw des neuesten METAR/SPECI (sonst leer)."""
+    candidates = [
+        obs
+        for obs in observations
+        if obs.metar_raw and obs.metar_raw[:5] in ("METAR", "SPECI")
+    ]
+    if not candidates:
+        return ""
+    latest = max(candidates, key=lambda obs: obs.observed_at)
+    return latest.metar_raw[:5]
+
+
 def build_run_report(observations: list[Observation], changes: list[ValueChange]) -> str:
     """Statuszeile je Station für jeden Lauf – auch ohne Wertänderung."""
     change_by_station = {change.station: change for change in changes}
@@ -399,7 +412,9 @@ def build_run_report(observations: list[Observation], changes: list[ValueChange]
 
     if not lines:
         return ""
-    return "📡 MADIS Poll\n" + "\n".join(lines)
+    kind = latest_metar_kind(observations)
+    header = f"📡 MADIS Poll {kind}".rstrip()
+    return header + "\n" + "\n".join(lines)
 
 
 def send_telegram_run_report(observations: list[Observation], changes: list[ValueChange]) -> None:

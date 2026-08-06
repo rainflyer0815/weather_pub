@@ -55,6 +55,81 @@ def iso_et(dt: datetime) -> str:
     return dt.astimezone(ET).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def _pm_label(question: str, day: date) -> str:
+    if "between" in question:
+        return (
+            question.split("between ")[-1]
+            .replace(f" on {day.strftime('%B')} {day.day}?", "")
+            .replace("°F", "")
+            .strip()
+        )
+    if "below" in question.lower():
+        return "79 or below"
+    return question[-28:]
+
+
+def fetch_yes_book_pressure(token_id: str, near_cents: float = 0.05) -> dict | None:
+    """Orderbuch-Druck für YES-Token: Imbalance >0 = Bid/Kauf-Druck, <0 = Ask/Verkauf-Druck."""
+    try:
+        book = http_json(f"https://clob.polymarket.com/book?token_id={token_id}", timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    bids = [(float(x["price"]), float(x["size"])) for x in (book.get("bids") or [])]
+    asks = [(float(x["price"]), float(x["size"])) for x in (book.get("asks") or [])]
+    if not bids or not asks:
+        return None
+    best_bid = max(bids, key=lambda x: x[0])
+    best_ask = min(asks, key=lambda x: x[0])
+    mid = (best_bid[0] + best_ask[0]) / 2.0
+    spread = best_ask[0] - best_bid[0]
+    bid_near = sum(s for p, s in bids if p >= mid - near_cents)
+    ask_near = sum(s for p, s in asks if p <= mid + near_cents)
+    total = bid_near + ask_near
+    imbalance = ((bid_near - ask_near) / total) if total > 0 else 0.0
+    # Top-of-book notional (price * size) within 10¢ of touch
+    bid_notional = sum(p * s for p, s in bids if p >= best_bid[0] - 0.10)
+    ask_notional = sum(p * s for p, s in asks if p <= best_ask[0] + 0.10)
+    last_trade = book.get("last_trade_price")
+    try:
+        last_trade_f = float(last_trade) if last_trade is not None else None
+    except (TypeError, ValueError):
+        last_trade_f = None
+    hist_t, hist_p = [], []
+    momentum = None
+    try:
+        hist = http_json(
+            f"https://clob.polymarket.com/prices-history?market={token_id}"
+            f"&interval=1h&fidelity=1",
+            timeout=20,
+        )
+        series = hist.get("history") or []
+        for pt in series:
+            hist_t.append(
+                datetime.fromtimestamp(pt["t"], tz=timezone.utc)
+                .astimezone(ET)
+                .strftime("%Y-%m-%dT%H:%M:%S")
+            )
+            hist_p.append(round(float(pt["p"]) * 100, 2))
+        if len(series) >= 2:
+            momentum = round((float(series[-1]["p"]) - float(series[0]["p"])) * 100, 2)
+    except Exception:  # noqa: BLE001
+        pass
+    return {
+        "best_bid": round(best_bid[0], 3),
+        "best_ask": round(best_ask[0], 3),
+        "mid": round(mid, 3),
+        "spread": round(spread, 3),
+        "bid_depth_near": round(bid_near, 1),
+        "ask_depth_near": round(ask_near, 1),
+        "bid_notional_10c": round(bid_notional, 1),
+        "ask_notional_10c": round(ask_notional, 1),
+        "imbalance": round(imbalance, 3),
+        "last_trade": last_trade_f,
+        "momentum_1h_pp": momentum,
+        "price_hist": {"t": hist_t, "p": hist_p},
+    }
+
+
 def collect_snapshot(day: date | None = None, madis_hours: int = 8) -> dict:
     day = day or datetime.now(ET).date()
     day_start = datetime(day.year, day.month, day.day, tzinfo=ET)
@@ -152,19 +227,25 @@ def collect_snapshot(day: date | None = None, madis_hours: int = 8) -> dict:
             if isinstance(prices, str):
                 prices = json.loads(prices)
             p = float(prices[0]) if prices else float(m.get("lastTradePrice") or 0)
-            if "between" in q:
-                label = (
-                    q.split("between ")[-1]
-                    .replace(f" on {day.strftime('%B')} {day.day}?", "")
-                    .replace("°F", "")
-                    .strip()
-                )
-            elif "below" in q.lower():
-                label = "79 or below"
-            else:
-                label = q[-28:]
-            pm.append({"label": label, "yes": round(p * 100, 1)})
+            tokens = m.get("clobTokenIds")
+            if isinstance(tokens, str):
+                tokens = json.loads(tokens)
+            yes_token = tokens[0] if tokens else None
+            pm.append(
+                {
+                    "label": _pm_label(q, day),
+                    "yes": round(p * 100, 1),
+                    "yes_token": yes_token,
+                }
+            )
         pm.sort(key=lambda x: -x["yes"])
+        # Orderbuch-Druck für die Top-Buckets (CLOB public book)
+        for row in pm[:5]:
+            tok = row.get("yes_token")
+            if not tok:
+                row["pressure"] = None
+                continue
+            row["pressure"] = fetch_yes_book_pressure(tok)
     except Exception as exc:  # noqa: BLE001
         pm_error = str(exc)
     else:
@@ -185,6 +266,21 @@ def collect_snapshot(day: date | None = None, madis_hours: int = 8) -> dict:
                 madis_max_t = te_iso
                 break
 
+    # Live-Druck-Historie: Ringpuffer je Bucket (für Serve-Mode)
+    pressure_hist = getattr(collect_snapshot, "_pressure_hist", {})
+    stamp = now_et.strftime("%Y-%m-%dT%H:%M:%S")
+    for row in pm[:5]:
+        label = row["label"]
+        pr = row.get("pressure") or {}
+        series = pressure_hist.setdefault(label, {"t": [], "imb": [], "mid": []})
+        series["t"].append(stamp)
+        series["imb"].append(pr.get("imbalance"))
+        series["mid"].append(round(pr["mid"] * 100, 1) if pr.get("mid") is not None else None)
+        # keep last ~90 samples (~1.5h @ 60s)
+        for k in ("t", "imb", "mid"):
+            series[k] = series[k][-90:]
+    collect_snapshot._pressure_hist = pressure_hist
+
     return {
         "generated_at_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generated_at_et": now_et.strftime("%Y-%m-%d %H:%M ET"),
@@ -197,6 +293,7 @@ def collect_snapshot(day: date | None = None, madis_hours: int = 8) -> dict:
         "hrrr": {"t": om_t, "c": om_c},
         "ensemble": {"t": ens_t, "c": ens_c},
         "pm": pm[:10],
+        "pressure_hist": pressure_hist,
         "stats": {
             "metar_max_f": round(c_to_f(ms_max[1]), 1) if ms_max else None,
             "metar_max_et": ms_max[0].strftime("%H:%M") if ms_max else None,
@@ -258,6 +355,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
   #temp { height: 520px; }
   #pm { height: 320px; }
+  #pressureImb { height: 300px; }
+  #pressureDepth { height: 280px; }
+  #pressurePrice { height: 280px; }
+  .press-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 900px) { .press-grid { grid-template-columns: 1fr; } }
+  .card h2 {
+    margin: 4px 8px 0; font-size: 0.95rem; font-weight: 600;
+  }
+  .card .hint {
+    margin: 2px 8px 6px; color: var(--muted); font-size: 0.78rem;
+  }
   .stats {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 8px; padding: 4px 8px 12px;
@@ -296,9 +406,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <section class="card">
     <div id="pm"></div>
   </section>
+  <section class="card">
+    <h2>Polymarket Buy / Sell Druck</h2>
+    <p class="hint">
+      Orderbuch-Imbalance (±5¢ um Mid): positiv = Bid/Kauf-Druck, negativ = Ask/Verkauf-Druck.
+      Depth = Shares nahe Touch (±10¢). Momentum = Mid-Veränderung letzte Stunde (pp).
+    </p>
+    <div id="pressureImb"></div>
+    <div class="press-grid">
+      <div id="pressureDepth"></div>
+      <div id="pressurePrice"></div>
+    </div>
+  </section>
 </main>
 <footer>
-  Quellen: NOAA MADIS HFMETAR, aviationweather.gov, Open-Meteo best_match (HRRR), Polymarket Gamma.
+  Quellen: NOAA MADIS HFMETAR, aviationweather.gov, Open-Meteo best_match (HRRR),
+  Polymarket Gamma + CLOB Orderbuch.
   Settlement = WU/METAR/SPECI, nicht MADIS. Auto-Refresh wenn unter <code>--serve</code>.
 </footer>
 <script>
@@ -431,12 +554,119 @@ function renderPm(d) {
   }], layout, {responsive: true, displayModeBar: false});
 }
 
+function topPressure(d) {
+  return (d.pm || []).filter(p => p.pressure).slice(0, 5);
+}
+
+function renderPressure(d) {
+  const rows = topPressure(d);
+  const base = {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    margin: {t: 36, r: 24, b: 40, l: 90}
+  };
+  if (!rows.length) {
+    Plotly.react("pressureImb", [], {...base, title: {text: "Kein Orderbuch (CLOB)", font:{size:13}}});
+    Plotly.react("pressureDepth", [], base);
+    Plotly.react("pressurePrice", [], base);
+    return;
+  }
+  const labels = rows.map(r => r.label);
+  const imb = rows.map(r => +(r.pressure.imbalance * 100).toFixed(1));
+  const mom = rows.map(r => r.pressure.momentum_1h_pp);
+  const bidD = rows.map(r => r.pressure.bid_depth_near);
+  const askD = rows.map(r => r.pressure.ask_depth_near);
+  const colors = imb.map(v => v > 8 ? "#16a34a" : v < -8 ? "#dc2626" : "#a8a29e");
+
+  Plotly.react("pressureImb", [{
+    type: "bar", orientation: "h",
+    y: labels, x: imb, marker: {color: colors},
+    customdata: rows.map(r => [
+      (r.pressure.best_bid*100).toFixed(1),
+      (r.pressure.best_ask*100).toFixed(1),
+      (r.pressure.spread*100).toFixed(1),
+      r.pressure.momentum_1h_pp
+    ]),
+    text: imb.map((v,i) => {
+      const m = mom[i];
+      const ms = m == null ? "" : ` · 1h ${m>=0?"+":""}${m}pp`;
+      return `${v>0?"+":""}${v}%${ms}`;
+    }),
+    textposition: "outside",
+    hovertemplate:
+      "%{y}<br>Imbalance %{x:.1f}%<br>Bid %{customdata[0]}¢ / Ask %{customdata[1]}¢" +
+      "<br>Spread %{customdata[2]}¢<br>1h Mom %{customdata[3]}pp<extra></extra>"
+  }], {
+    ...base,
+    title: {text: "Orderbuch-Imbalance (Kauf ← → Verkauf)", font: {size: 13}},
+    xaxis: {title: "Imbalance % (Bid−Ask)/(Bid+Ask)", range: [-100, 100], zeroline: true},
+    yaxis: {autorange: "reversed"},
+    shapes: [{
+      type: "line", x0: 0, x1: 0, y0: -0.5, y1: labels.length - 0.5,
+      line: {color: "#78716c", width: 1, dash: "dot"}
+    }]
+  }, {responsive: true, displayModeBar: false});
+
+  Plotly.react("pressureDepth", [
+    {
+      type: "bar", orientation: "h", name: "Bid-Depth (±5¢)",
+      y: labels, x: bidD, marker: {color: "#16a34a"},
+      hovertemplate: "%{y} Bid %{x:.0f}<extra></extra>"
+    },
+    {
+      type: "bar", orientation: "h", name: "Ask-Depth (±5¢)",
+      y: labels, x: askD.map(v => -v), marker: {color: "#dc2626"},
+      hovertemplate: "%{y} Ask %{customdata:.0f}<extra></extra>",
+      customdata: askD
+    }
+  ], {
+    ...base,
+    title: {text: "Near-Touch Depth (Shares)", font: {size: 13}},
+    barmode: "relative",
+    xaxis: {title: "← Ask  |  Bid →"},
+    yaxis: {autorange: "reversed"},
+    legend: {orientation: "h", y: 1.15}
+  }, {responsive: true, displayModeBar: false});
+
+  // Preis-Sparklines: CLOB 1h history + Live-Ringpuffer wenn vorhanden
+  const priceTraces = [];
+  const hist = d.pressure_hist || {};
+  rows.forEach((r, i) => {
+    const ph = r.pressure.price_hist || {};
+    if (ph.t && ph.t.length) {
+      priceTraces.push({
+        x: ph.t, y: ph.p, name: r.label + " (1h)",
+        mode: "lines", line: {width: 2},
+        hovertemplate: "%{y:.1f}¢<extra>" + r.label + "</extra>"
+      });
+    }
+    const live = hist[r.label];
+    if (live && live.t && live.t.length > 1) {
+      priceTraces.push({
+        x: live.t, y: live.mid, name: r.label + " (live mid)",
+        mode: "lines+markers", line: {width: 1.5, dash: "dot"},
+        marker: {size: 4},
+        hovertemplate: "%{y:.1f}¢ mid<extra>" + r.label + "</extra>"
+      });
+    }
+  });
+  Plotly.react("pressurePrice", priceTraces, {
+    ...base,
+    title: {text: "Yes-Preis (¢) — 1h History / Live-Mid", font: {size: 13}},
+    xaxis: {type: "date", title: "ET"},
+    yaxis: {title: "¢"},
+    legend: {orientation: "h", y: 1.18, font: {size: 10}},
+    margin: {t: 40, r: 20, b: 40, l: 45}
+  }, {responsive: true, displayModeBar: false});
+}
+
 function renderAll(d) {
   document.getElementById("subtitle").textContent =
     `${d.day} · Stand ${d.generated_at_cet} / ${d.generated_at_et}`;
   renderStats(d);
   renderTemp(d);
   renderPm(d);
+  renderPressure(d);
 }
 
 async function load() {

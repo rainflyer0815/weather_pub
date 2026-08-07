@@ -19,6 +19,10 @@ Third-party deps are installed to the user site by the startup update script:
   smoke test; needs outbound network but no secrets.
 - `python3 generate_all_charts.py` — renders temperature/peak-time PNGs. Set
   `MPLBACKEND=Agg` when running headless.
+- `python3 station_day_chart.py --station KAUS` — reusable daily-high chart
+  template (Ensemble/MADIS/METAR/Wolken/Wind/Polymarket). Use this for future
+  station day plots instead of one-off scripts. `MPLBACKEND=Agg` when headless.
+  `python3 station_day_chart.py --list` shows known stations.
 - `python3 analyze_dwd_feed_lag.py` — offline analysis over the committed
   `dwd_feed_lag_log.csv`; use `MPLBACKEND=Agg` for the plot.
 

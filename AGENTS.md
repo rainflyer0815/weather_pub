@@ -23,6 +23,10 @@ Third-party deps are installed to the user site by the startup update script:
   template (Ensemble/MADIS/METAR/Wolken/Wind/Polymarket). Use this for future
   station day plots instead of one-off scripts. `MPLBACKEND=Agg` when headless.
   `python3 station_day_chart.py --list` shows known stations.
+- `python3 validate_hrrr_metar_kaus.py` — 1y HRRR/best_match previous-run
+- `python3 validate_hrrr_inits_kaus.py` — 90d HRRR AWS/Google inits (06/12/15/18z) vs IEM METAR at KAUS.
+
+  snapshots vs IEM METAR daily max for KAUS/AUS (public APIs only).
 - `python3 analyze_dwd_feed_lag.py` — offline analysis over the committed
   `dwd_feed_lag_log.csv`; use `MPLBACKEND=Agg` for the plot.
 
